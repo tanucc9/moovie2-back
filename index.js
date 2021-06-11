@@ -8,6 +8,8 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({extended: true}));
 
 mongo().then(({films}) => {
+
+	// Tutti i film paginati con filtri titolo-anno-genere, ordinati per titolo-anno-genere-durata (de/)crescenti
 	app.route('/film').get(
 		query('titleQuery').isString().optional(),
 		query('year').isInt().toInt().optional(),
@@ -80,6 +82,49 @@ mongo().then(({films}) => {
 			const result = {paginatedFilms, totalFilms};
 			return res.json(result);
 		});
+
+	// Tutti i film usciti in un dato anno con un dato attore
+	app.route('/film/:year([0-9]+)/:actor').get(
+		async (req, res) => {
+			const {year, actor} = req.params;
+			const matchingFilms = await films.find({
+				anno: {$eq: parseInt(year)},
+				attori: {
+					$in: [actor],
+				},
+			}).toArray().catch(e => {
+				console.error(e);
+			})
+			return res.json(matchingFilms);
+		});
+
+	// Tutti i film girati da un dato regista, ordinati per anno di uscita crescente
+	app.route('/film/:director').get(
+		async (req, res) => {
+			const {director} = req.params;
+			const matchingFilms = await films.find({
+				registi: {
+					$in: [director],
+				},
+			}).sort({anno: 1}).toArray().catch(e => {
+				console.error(e);
+			})
+			return res.json(matchingFilms);
+		});
+
+	// Tutti i film di un dato genere votati da un dato numero minimo, ordinati per numero di voti decrescente
+	app.route('/film/:genre/:minimum([0-9]+)').get(
+		async (req, res) => {
+			const {genre, minimum} = req.params;
+			const matchingFilms = await films.find({
+				genere: {$eq: genre},
+				voti: {$gte: parseInt(minimum)},
+			}).sort({voti: -1}).toArray().catch(e => {
+				console.error(e);
+			})
+			return res.json(matchingFilms);
+		});
+
 })
 
 const port = process.env.PORT || 80;
