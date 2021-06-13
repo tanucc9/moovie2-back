@@ -30,9 +30,8 @@ mongo().then(({films}) => {
 			};
 			let {titolo, anno, genere} = req.query;
 			if (titolo) {
-				const uniqueTitleWords = titolo.trim().replace(/ +/g, ' ').split(' ')
-					.filter((item, index, arr) => arr.indexOf(item) === index);
-				const reg = new RegExp(uniqueTitleWords.join('|'), 'i');
+				const reg = new RegExp('^.*' + titolo + '.*$', 'i');
+				// criteria.$and.push({titolo_italiano: {$regex: reg}});
 				criteria.$and.push({
 					$or: [
 						{titolo_originale: {$regex: reg}},
@@ -164,7 +163,6 @@ mongo().then(({films}) => {
 
 	// Tutti i film di un dato genere votati da un dato numero minimo, ordinati per numero di voti decrescente
 	app.route('/film/genere/:genere/voti-minimi/:minimo([0-9]+)').get(
-		param('director').isString().isLength({min: 1}),
 		param('genere').isString().isLength({min: 1}),
 		param('minimo').isInt({min: 0, max: 10}),
 		async (req, res) => {
