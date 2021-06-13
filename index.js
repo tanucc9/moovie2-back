@@ -181,8 +181,227 @@ mongo().then(({films}) => {
 				})
 			return res.json(matchingFilms);
 		});
+	
+	//I tre migliori registi in assoluto (best director)
+	app.route('/registi/best/from/:from([0-9]+)/to/:to([0-9]+)').get(
+		async (req, res) => {
+			let {from, to} = req.params;
+
+			from = parseInt(from);
+			to = parseInt(to);
+
+			//le operazione da passare all'aggregate
+			const stages = [
+				{
+					$unwind: "$registi"
+				},
+				{
+					$group: {
+						_id: "$registi",
+						media_voti: { $avg: "$voto_medio" },
+						film_girati: {$sum : 1}
+					}
+				},
+				{
+					$project: {
+						media_voti : 1,
+						film_girati: 1,
+						punteggioRankig : 
+						{
+							$let: {
+								vars : {
+									bonusPunteggio : {
+										$switch: {
+											branches: [
+												{case: {$gte: ['$film_girati', 40]}, then: 2 },
+												{case: {$gte: ['$film_girati', 30]}, then: 1.8 },
+												{case: {$gte: ['$film_girati', 20]}, then: 1.6 },
+												{case: {$gt: ['$film_girati', 10]}, then: 1.4 },
+												{case: {$gte: ['$film_girati', 5]}, then: 1.2 },
+											],
+											default: 1
+										}
+									},
+								},
+								in: {
+									$multiply: ['$$bonusPunteggio', '$media_voti']
+								}
+							}
+						}
+					}
+				},
+				{$sort: {punteggioRankig:-1}},
+				{$limit: 3}
+			];
+			
+			//Controllo dei parametri opzionali per la query
+			if (from !== 0  && to  !== 0) {
+				stages.unshift(
+					{
+						$match: {
+							anno :{
+								$gte: from,
+								$lte: to 
+							}
+						}
+					}
+				);
+			} else if (from !== 0) {
+				stages.unshift(
+					{
+						$match: {
+							anno :{
+								$gte: from
+							}
+						}
+					}
+				);
+			} else if (to !== 0) {
+				stages.unshift(
+					{
+						$match: {
+							anno :{
+								$lte: to
+							}
+						}
+					}
+				);
+			}
+
+			const result = await films.aggregate( stages ).toArray().catch(e => {
+				console.error(e);
+			});
+
+			return res.json(result);
+		}
+	);
+
+	//I 5 registi con più film girati
+	app.route('/registi/most-films').get(
+		async (req, res) => {
+
+			const result = await films.aggregate(
+				[
+					{ $unwind: "$registi" },
+					{
+					  $group: {
+						 _id: "$registi",
+						 film_girati: { $sum: 1 }
+					  }
+					},
+					{$sort: {film_girati:-1}},
+					{$limit: 5}
+				  ],
+			).toArray().catch(e => {
+				console.error(e);
+			})
+
+			return res.json(result);
+		}
+	);
+
+	//I 5 registi con la media voto migliore
+	app.route('/registi/best-avg').get(
+		async (req, res) => {
+
+			const result = await films.aggregate(
+				[
+					{
+						$match: {
+							voti : { $gte: 2 }
+						}
+					},
+					{ $unwind: "$registi" },
+					{
+					  $group: {
+						 _id: "$registi",
+						 media_voti: { $avg: "$voto_medio" },
+						 count: {$sum : 1}
+					  }
+					},
+					{
+						$match: {
+							count : { $gte: 2 }
+						}
+					},
+					{$sort: {media_voti:-1}},
+					{$limit: 5}
+				],
+			).toArray().catch(e => {
+				console.error(e);
+			})
+
+			return res.json(result);
+		}
+	);
+	
+
+	//Attori filtrati in base all'anno di uscita del film, durata e genere. Gestio con paginazione.
+	app.route('/attori/anno-film/:anno/durata/:durata/genere/:genere/npage/:page').get(
+		async (req, res) => {
+
+			const numPerPage = 20;
+			const numPage = parseInt(req.params['page']);
+			const skipVal = numPage > 0 ? ( (numPage - 1) * numPerPage ) : 0;
+
+			const anno = parseInt(req.params['anno']);
+			const durata = parseInt(req.params['durata']);
+			const genere = req.params['genere'];
+
+			const result = await films.aggregate(
+				[
+					{
+						$match: {
+							anno : anno,
+							genere: genere,
+							durata : {$gte: durata}
+						}
+					},
+					{
+						$unwind: "$attori"
+					},
+					{
+						$project : {
+							titolo_originale : 1,
+							attori : 1,
+							durata : 1,
+							voto_medio : 1
+						}
+					},
+					{
+						$sort : {attori: 1}
+					},
+					{
+						$skip: skipVal
+					},
+					{
+						$limit : numPerPage
+					},
+					{
+						$group: {
+							_id : "$attori",
+							films : {
+								$push: {
+										titolo_originale: "$titolo_originale",
+										durata: "$durata",
+										voto_medio : "$voto_medio",
+								}
+							}
+						}
+					}
+		
+				],
+			).toArray().catch(e => {
+				console.error(e);
+			})
+
+			return res.json(result);
+		}
+	);
+
+
 
 })
 
-const port = process.env.PORT || 8080;
+const port = process.env.PORT || 8081;
 app.listen(port);
