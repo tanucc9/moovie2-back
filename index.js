@@ -8,7 +8,7 @@ const cors = require('cors');
 const app = express();
 app.use(cors())
 
-mongo().then(({films}) => {
+mongo().then(({films, attori}) => {
 
 	// Tutti i film paginati con filtri titolo-anno-genere, ordinati per titolo-anno-genere-durata (de/)crescenti
 	app.route('/film').get(
@@ -337,11 +337,101 @@ mongo().then(({films}) => {
 	
 
 	//Attori filtrati in base all'anno di uscita del film, durata e genere. Gestio con paginazione.
-	app.route('/attori/anno-film/:anno/durata/:durata/genere/:genere/npage/:page').get(
+	app.route('/attori/anno-film/:anno/durata/:durata/genere/:genere/npage/:page/perpage/:perpage').get(
 		async (req, res) => {
 			
 			//Paginazione
-			const numPerPage = 20;
+			const numPerPage = parseInt(req.params['perpage']);
+			const numPage = parseInt(req.params['page']);
+			const skipVal = numPage > 0 ? ( (numPage - 1) * numPerPage ) : 0;
+
+			//Parametri
+			const anno = parseInt(req.params['anno']);
+			const durata = parseInt(req.params['durata']);
+			const genere = req.params['genere'];
+
+			let match = {$match:{}};
+
+			if(anno !== 0)
+				match.$match["films.anno"] = anno;
+
+			if(durata !== 0) 
+				match.$match["films.durata"] = {$gte: durata};
+
+			if (genere !== 'null' )
+				match.$match["films.genere"] = genere;
+
+			//unwind array films
+			const unwind = 					{
+				$unwind: "$films"
+			};
+
+			//group
+			const group = {
+				$group: {
+					_id: "$nome",
+					films: {$push: "$films"}
+				}
+			};
+
+			//Query attori con film
+			const attoriResult = await attori.aggregate(
+				[
+					unwind,
+					match,
+					group,
+					{
+						$sort: {_id:1}
+					},
+					{
+						$skip: skipVal
+					},
+					{
+						$limit : numPerPage
+					},	
+					{
+						$project : {
+							nome: "$_id",
+							_id: 0,
+							films : "$films"
+						}
+					}	
+				],
+			).toArray().catch(e => {
+				console.error(e);
+			});
+
+			//Query per il numero totale di record (utile alla paginazione)
+			const numMaxRecordQuery = await attori.aggregate(
+				[
+					unwind,
+					match,
+					group,
+					{
+						$count : "numMaxRecord"
+					}
+				]
+			).toArray().catch(e => {
+				console.error(e);
+			});
+
+			//Compatibilità con il front
+			const numMaxRecord = numMaxRecordQuery.length > 0 ? numMaxRecordQuery[0].numMaxRecord : 0;
+			
+			const result = {
+				attoriResult,
+				numMaxRecord
+			}
+			return res.json(result);
+		}
+	);
+
+	//Attori con paginazione.
+	app.route('/attori/paginated/page/:page/perpage/:perpage').get(
+		async (req, res) => {
+			
+			//Paginazione
+			const numPerPage = parseInt(req.params['perpage']);
 			const numPage = parseInt(req.params['page']);
 			const skipVal = numPage > 0 ? ( (numPage - 1) * numPerPage ) : 0;
 
@@ -351,74 +441,16 @@ mongo().then(({films}) => {
 			const genere = req.params['genere'];
 
 			//Query attori con film
-			const attoriResult = await films.aggregate(
-				[
-					{
-						$match: {
-							anno : anno,
-							genere: genere,
-							durata : {$gte: durata}
-						}
-					},
-					{
-						$unwind: "$attori"
-					},
-					{
-						$project : {
-							titolo_originale : 1,
-							attori : 1,
-							durata : 1,
-							voto_medio : 1
-						}
-					},
-					{
-						$sort : {attori: 1}
-					},
-					{
-						$skip: skipVal
-					},
-					{
-						$limit : numPerPage
-					},
-					{
-						$group: {
-							_id : "$attori",
-							films : {
-								$push: {
-										titolo_originale: "$titolo_originale",
-										durata: "$durata",
-										voto_medio : "$voto_medio",
-								}
-							}
-						}
-					}
-		
-				],
-			).toArray().catch(e => {
-				console.error(e);
-			});
+			const attoriResult = await attori.find()
+										.sort({nome : 1})
+										.skip(skipVal)
+										.limit(numPerPage)
+										.toArray().catch(e => {
+											console.error(e);
+										});
 
 			//Query per il numero totale di record (utile alla paginazione)
-			const numMaxRecord = await films.aggregate(
-				[
-					{
-						$match: {
-							anno : anno,
-							genere: genere,
-							durata : {$gte: durata}
-						}
-					},
-					{
-						$unwind: "$attori"
-					},
-					{
-						$count : "num_records_totali"
-					}
-				]
-			).toArray().catch(e => {
-				console.error(e);
-			});
-
+			const numMaxRecord = await attori.countDocuments();
 			const result = {
 				attoriResult,
 				numMaxRecord

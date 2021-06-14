@@ -7,5 +7,6 @@ module.exports = () => client.connect().then(() => {
 	console.log('MongoDB connection established');
 	return {
 		films: db.collection('film'),
+		attori: db.collection('attori')
 	};
 });
