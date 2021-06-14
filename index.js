@@ -339,16 +339,19 @@ mongo().then(({films}) => {
 	//Attori filtrati in base all'anno di uscita del film, durata e genere. Gestio con paginazione.
 	app.route('/attori/anno-film/:anno/durata/:durata/genere/:genere/npage/:page').get(
 		async (req, res) => {
-
+			
+			//Paginazione
 			const numPerPage = 20;
 			const numPage = parseInt(req.params['page']);
 			const skipVal = numPage > 0 ? ( (numPage - 1) * numPerPage ) : 0;
 
+			//Parametri
 			const anno = parseInt(req.params['anno']);
 			const durata = parseInt(req.params['durata']);
 			const genere = req.params['genere'];
 
-			const result = await films.aggregate(
+			//Query attori con film
+			const attoriResult = await films.aggregate(
 				[
 					{
 						$match: {
@@ -393,8 +396,33 @@ mongo().then(({films}) => {
 				],
 			).toArray().catch(e => {
 				console.error(e);
-			})
+			});
 
+			//Query per il numero totale di record (utile alla paginazione)
+			const numMaxRecord = await films.aggregate(
+				[
+					{
+						$match: {
+							anno : anno,
+							genere: genere,
+							durata : {$gte: durata}
+						}
+					},
+					{
+						$unwind: "$attori"
+					},
+					{
+						$count : "num_records_totali"
+					}
+				]
+			).toArray().catch(e => {
+				console.error(e);
+			});
+
+			const result = {
+				attoriResult,
+				numMaxRecord
+			}
 			return res.json(result);
 		}
 	);
