@@ -337,32 +337,48 @@ mongo().then(({films, attori}) => {
 	
 
 	//Attori filtrati in base all'anno di uscita del film, durata e genere. Gestio con paginazione.
-	app.route('/attori/anno-film/:anno/durata/:durata/genere/:genere/npage/:page/perpage/:perpage').get(
+	app.route('/attori/filtered').get(
+		query('durata').isInt().toInt().optional(),
+		query('anno').isInt().toInt().optional(),
+		query('genere').isString().optional(),
+		query('nome').isString().optional(),
+		query('perpage').isInt({min: 1}).toInt(),
+		query('page').isInt({min: 1}).toInt(),
 		async (req, res) => {
 			
+			const errors = validationResult(req);
+			if (!errors.isEmpty()) {
+				return res.status(400).json({errors: errors.array()});
+			}
+
 			//Paginazione
-			const numPerPage = parseInt(req.params['perpage']);
-			const numPage = parseInt(req.params['page']);
+			const numPerPage = req.query['perpage'];
+			console.log(numPerPage);
+			const numPage = req.query['page'];
 			const skipVal = numPage > 0 ? ( (numPage - 1) * numPerPage ) : 0;
 
 			//Parametri
-			const anno = parseInt(req.params['anno']);
-			const durata = parseInt(req.params['durata']);
-			const genere = req.params['genere'];
+			const {anno, durata, genere, nome } = req.query;
 
 			let match = {$match:{}};
-
-			if(anno !== 0)
+			
+			if (nome) {
+				const regex = new RegExp('^' + nome, 'i');		
+				match.$match['nome'] = {$regex: regex };
+			}
+	
+			if(anno)
 				match.$match["films.anno"] = anno;
 
-			if(durata !== 0) 
+			if(durata) 
 				match.$match["films.durata"] = {$gte: durata};
 
-			if (genere !== 'null' )
+			if (genere)
 				match.$match["films.genere"] = genere;
-
+				console.log(match);
+				
 			//unwind array films
-			const unwind = 					{
+			const unwind = 	{
 				$unwind: "$films"
 			};
 
@@ -434,11 +450,6 @@ mongo().then(({films, attori}) => {
 			const numPerPage = parseInt(req.params['perpage']);
 			const numPage = parseInt(req.params['page']);
 			const skipVal = numPage > 0 ? ( (numPage - 1) * numPerPage ) : 0;
-
-			//Parametri
-			const anno = parseInt(req.params['anno']);
-			const durata = parseInt(req.params['durata']);
-			const genere = req.params['genere'];
 
 			//Query attori con film
 			const attoriResult = await attori.find()
